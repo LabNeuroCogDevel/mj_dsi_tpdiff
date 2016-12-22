@@ -1,8 +1,14 @@
 library(dplyr)
 library(tidyr)
 
-#df <- read.table('20161221_combined_rsfMRI_dsi_10_25_final.txt')
-df <- read.table('20161221_combined_rsfMRI_dsi_10_25_final(1).txt')
+df <- read.table('20161221_combined_rsfMRI_dsi_10_25_final.txt',header=T) 
+df[df$id == 10820 & df$date == 20211025,'date'] <- 20121025
+#names(df)[1] <-'ID'
+#df <- read.table('20161221_combined_rsfMRI_dsi_10_25_final(1).txt')
+
+# check input
+bad <- df %>% filter(id != gsub('_.*','',ID) | date != gsub('.*_','',ID) ) %>% select(ID,id,date)
+if( nrow(bad) > 0L) {print(bad);stop('bad input')}
 
 # use rank to get/set visit time point
 # hang out to number of visits "ntp" and max visit number "mxtp" for QA
