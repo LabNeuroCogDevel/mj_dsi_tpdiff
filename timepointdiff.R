@@ -1,14 +1,55 @@
 library(dplyr)
 library(tidyr)
+library(lubridate)
 
 df <- read.table('20161221_combined_rsfMRI_dsi_10_25_final.txt',header=T) 
-df[df$id == 10820 & df$date == 20211025,'date'] <- 20121025
-#names(df)[1] <-'ID'
-#df <- read.table('20161221_combined_rsfMRI_dsi_10_25_final(1).txt')
 
-# check input
+# fix date 
+df[df$id == 10820 & df$date == 20211025,'date'] <- 20121025
+df$sex[df$id == 10711 ] <- 1 # is a male
+
+# remove dropped(?) visit with tranposed date 2011-09
+df <- df[-which(df$ID=='10765_20091116'),]
+
+# add dob
+df <- df %>% mutate(dob = ymd(date) - days(round(age*365.25))) 
+
+## check input
+# id and dates match
 bad <- df %>% filter(id != gsub('_.*','',ID) | date != gsub('.*_','',ID) ) %>% select(ID,id,date)
-if( nrow(bad) > 0L) {print(bad);stop('bad input')}
+if( nrow(bad) > 0L) {print(bad);stop('bad input: mismatch id date')}
+
+# date of births match
+bad.dob <- df %>%
+ group_by(id) %>%
+ summarise(ndob=length(unique(dob)),doboff=length(which(abs(diff(unique(dob)))>5))) %>%
+ filter(doboff>0)
+if( nrow(bad.dob) > 0L) {print(bad.dob);stop('bad input: bad dob')}
+
+# sex match
+bad.sex <- 
+ df %>%
+ group_by(id) %>%
+ summarise(nsex=length(unique(na.omit(sex)))) %>%
+ filter(nsex!=1)
+if( nrow(bad.sex) > 0L) {print(bad.sex);stop('bad input: conflicting sex')}
+
+replacedata.mean <- df %>%
+ group_by(id) %>%
+ summarise(dob=first(dob) + days(round(mean(c(0,diff(na.omit(dob))),na.rm=T))), sex=mean(sex,na.rm=T),n=n())
+
+# guess age where missing 
+naagei <- is.na(df$age)
+rpli <- replacedata.mean$id %in% df$id[naagei]
+df$age[naagei] <- (ymd(df$date[naagei]) - replacedata.mean$dob[rpli])/365.25
+
+# guess sex where missing
+nai <- is.na(df$sex)
+rpli <- replacedata.mean$id %in% df$id[nai]
+df$sex[nai] <- replacedata.mean$sex[rpli]
+
+
+##############################
 
 # use rank to get/set visit time point
 # hang out to number of visits "ntp" and max visit number "mxtp" for QA
@@ -29,7 +70,7 @@ d.s <-
  filter(mxtp>1)  %>% 
  # remove date/time columns -- want tp as sole time column
  # so we can pivot on time later -- wont work if non-unique pivot point
- select(-ID,-date) %>% 
+ select(-ID,-date,-ntp,-dob) %>% 
  # put all the measure columns into long fmt
  gather('meas','val',-id,-sex,-tp,-mxtp) %>% 
  # put timepoint as columns
